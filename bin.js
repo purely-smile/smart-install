@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-const path = require('path');
-const fs = require('fs');
-const {exec} = require("child_process");
-const md5 = require('md5');
-const {HOME} = process.env;
+const path = require("path");
+const fs = require("fs");
+const { spawn } = require("child_process");
+const md5 = require("md5");
+const { HOME } = process.env;
 const cwd = process.cwd();
-const configPath = path.resolve(HOME, '.smart-install-config.json');
-const pkgPath = path.resolve(cwd, 'package.json');
-const pkgLockPath = path.resolve(cwd, 'package-lock.json');
+const configPath = path.resolve(HOME, ".smart-install-config.json");
+const pkgPath = path.resolve(cwd, "package.json");
+const pkgLockPath = path.resolve(cwd, "package-lock.json");
 
 const checkData = checkPackage();
 if (!checkData) {
@@ -22,7 +22,7 @@ function getConfigData() {
     setConfigData({});
     return {};
   }
-  return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  return JSON.parse(fs.readFileSync(configPath, "utf8"));
 }
 
 // 设置配置
@@ -34,47 +34,56 @@ function setConfigData(data) {
 // 判断package.json是否存在
 function checkPackage() {
   if (fs.existsSync(pkgLockPath)) {
-    return {name: 'package-lock.json', jsonPath: pkgLockPath}
+    return { name: "package-lock.json", jsonPath: pkgLockPath };
   } else if (fs.existsSync(pkgPath)) {
-    return {name: 'package.json', jsonPath: pkgPath}
+    return { name: "package.json", jsonPath: pkgPath };
   } else {
     return false;
   }
 }
 
-function isNeedInstall({name, jsonPath}) {
+function isNeedInstall({ name, jsonPath }) {
   const data = getConfigData();
   const currentMd5 = md5(fs.readFileSync(jsonPath));
-  if (!data[jsonPath] || !data[jsonPath][name]) {
-    runInstall(data, jsonPath, currentMd5, name);
+  if (!data[cwd] || !data[cwd][name]) {
+    runInstall(data, currentMd5, name);
   } else {
-    const jsonDataMd5 = data[jsonPath][name];
+    const jsonDataMd5 = data[cwd][name];
     if (currentMd5 === jsonDataMd5) {
-      console.log('当前已安装最新依赖，已跳过npm install');
+      console.log("当前已安装最新依赖，已跳过npm install");
     } else {
-      runInstall(data, jsonPath, currentMd5, name)
+      runInstall(data, currentMd5, name);
     }
   }
 }
 
 // 设置md5
-function setMd5(data, jsonPath, currentMd5, name) {
-  if (!data[jsonPath]) {
-    data[jsonPath] = {};
+function setMd5(data, currentMd5, name) {
+  if (!data[cwd]) {
+    data[cwd] = {};
   }
-  data[jsonPath][name] = currentMd5;
+  data[cwd][name] = currentMd5;
   setConfigData(data);
 }
 
 // 安装依赖包
-function runInstall(data, jsonPath, currentMd5, name) {
-  console.log('开始执行npm install')
-  exec('npm install', (err, stdout, stderr) => {
-    if (err) {
-      return console.log('err', err);
+function runInstall(data, currentMd5, name) {
+  console.log("开始执行npm install");
+  const install = spawn("npm install", {
+    shell: true
+  });
+  install.stdout.on("data", function(data) {
+    console.log(data.toString());
+  });
+
+  install.stderr.on("data", function(data) {
+    console.log("stderr: " + data.toString());
+  });
+
+  install.on("exit", function(code) {
+    if (code === 0) {
+      setMd5(data, currentMd5, name);
     }
-    // if (stderr) {   return console.log('npm install 失败', stderr); }
-    console.log(stdout);
-    setMd5(data, jsonPath, currentMd5, name)
-  })
+    console.log("child process exited with code " + code.toString());
+  });
 }
